@@ -2,9 +2,11 @@ package com.example.jsaito.myapplication;
 
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.support.v4.content.FileProvider;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -12,10 +14,14 @@ import android.view.View;
 import android.widget.EditText;
 
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -23,16 +29,43 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
+import java.util.Queue;
 
 import android.util.Log;
 
+import com.android.volley.NetworkResponse;
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.Volley;
+
+import org.json.JSONObject;
+
+import com.example.jsaito.*;
+
+import static android.R.attr.mimeType;
+
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
+    public static Uri currentPhotoURI;
+    public static RequestQueue TheQueue;
+
+    private byte[] mMultipartBody;
+    private final String twoHyphens = "--";
+    private final String lineEnd = "\r\n";
+    private final String boundary = "apiclient-" + System.currentTimeMillis();
+    private final String mimeType = "multipart/form-data;boundary=" + boundary;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // Instantiate the RequestQueue.
+        TheQueue = Volley.newRequestQueue(this);
     }
 
     /** Called when the user taps the Send button */
@@ -68,25 +101,37 @@ public class MainActivity extends AppCompatActivity {
                 Uri photoURI = FileProvider.getUriForFile(this,
                         "com.example.android.fileprovider",
                         photoFile);
+                currentPhotoURI = photoURI;
                 takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
                 startActivityForResult(takePictureIntent, REQUEST_TAKE_PHOTO);
             }
         }
     }
 
-
-    // create file
-    String mCurrentPhotoPath;
+    // handle activity results
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        // Check which request we're responding to
+        if (requestCode == REQUEST_TAKE_PHOTO) {
+            if (resultCode == RESULT_OK) {
+                //Log.e(data.getExtras().);
+                Log.v("JTS", "onActivityResult");
+                String fileName = getFileName(currentPhotoURI);
+                Log.v("JTS", fileName);
+                String uploadFileName =
+                        getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString() +
+                        "/" + fileName;
+                File f = new File(uploadFileName);
+                uploadFile(f);
+            }
+        }
+    }
 
     private File createImageFile() throws IOException {
         // Create an image file name
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
         String imageFileName = "JPEG_" + timeStamp + "_";
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-
-        Log.v("TAG", "path=" + storageDir);
-
-        Log.v("JTS", "FileName=" + imageFileName);
 
         File image = null;
 
@@ -100,30 +145,125 @@ public class MainActivity extends AppCompatActivity {
             Log.v("JTS", e.toString());
         }
 
-
-        Log.v("JTS", "done");
-
         // Save a file: path for use with ACTION_VIEW intents
-        mCurrentPhotoPath = image.getAbsolutePath();
-
-        Log.v("JTS", "path=" + mCurrentPhotoPath);
-
         return image;
     }
 
 
-    /*
+
+    public String getFileName(Uri uri) {
+        String result = null;
+        if (uri.getScheme().equals("content")) {
+            Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
+                }
+            } finally {
+                cursor.close();
+            }
+        }
+        if (result == null) {
+            result = uri.getPath();
+            int cut = result.lastIndexOf('/');
+            if (cut != -1) {
+                result = result.substring(cut + 1);
+            }
+        }
+        return result;
+    }
+
+    private void uploadFile(File uploadFile) {
+        String url = "http://192.168.1.100/api/postfile";
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(bos);
+
+        byte[] multipartBody = new byte[0];
+        try {
+            byte[] bytes = getFileBytes(uploadFile);
+
+            // the first file
+            buildPart(dos, bytes, "foo.png");  // TODO: use real name
+            // send multipart form data necesssary after file data
+            dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
+            // pass to multipart body
+            multipartBody = bos.toByteArray();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        MultipartRequest multipartRequest = new MultipartRequest(url, null, mimeType, multipartBody, new Response.Listener<NetworkResponse>() {
+            @Override
+            public void onResponse(NetworkResponse response) {
+                //Toast.makeText(context, "Upload successfully!", Toast.LENGTH_SHORT).show();
+                Log.v("JTS", "received JSON response");
+                Log.v("JTS", response.toString());
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                Log.v("JTS", "error and shit");
+                //Toast.makeText(context, "Upload failed!\r\n" + error.toString(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Access the RequestQueue through your singleton class.
+        TheQueue.add(multipartRequest);
+    }
+
+    private void buildPart(DataOutputStream dataOutputStream, byte[] fileData, String fileName) throws IOException {
+        dataOutputStream.writeBytes(twoHyphens + boundary + lineEnd);
+        dataOutputStream.writeBytes("Content-Disposition: form-data; name=\"uploaded_file\"; filename=\""
+                + fileName + "\"" + lineEnd);
+        dataOutputStream.writeBytes(lineEnd);
+
+        ByteArrayInputStream fileInputStream = new ByteArrayInputStream(fileData);
+        int bytesAvailable = fileInputStream.available();
+
+        int maxBufferSize = 1024 * 1024;
+        int bufferSize = Math.min(bytesAvailable, maxBufferSize);
+        byte[] buffer = new byte[bufferSize];
+
+        // read file and write it into form...
+        int bytesRead = fileInputStream.read(buffer, 0, bufferSize);
+
+        while (bytesRead > 0) {
+            dataOutputStream.write(buffer, 0, bufferSize);
+            bytesAvailable = fileInputStream.available();
+            bufferSize = Math.min(bytesAvailable, maxBufferSize);
+            bytesRead = fileInputStream.read(buffer, 0, bufferSize);
+        }
+
+        dataOutputStream.writeBytes(lineEnd);
+    }
+
+
+    // low level shit for android
+    public static byte[] getFileBytes(File file) throws IOException {
+        InputStream in = new BufferedInputStream(new FileInputStream(file));
+        byte[] buf = new byte[(int) file.length()];
+        int numRead = in.read(buf);
+        return buf;
+    }
+
+/*
+
+
     // upload file
-    public void UploadFile(){
+    public void uploadFile(String fileName){
+        Log.v("JTS", "starting upload");
         try {
             // Set your file path here
-            FileInputStream fstrm = new FileInputStream(Environment.getExternalStorageDirectory().toString()+"/DCIM/file.mp4");
+            FileInputStream fstrm = new FileInputStream(fileName);
 
             // Set your server page url (and the file title/description)
-            HttpFileUpload hfu = new HttpFileUpload("http://34.253.87.41/upload", "Title","Description");
+            String postPhotoURL = getResources().getString(R.string.post_photo_url);
+            HttpFileUpload hfu = new HttpFileUpload(postPhotoURL, "id", fileName);
 
             hfu.Send_Now(fstrm);
 
+            Log.v("JTS", "sent");
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -256,6 +396,16 @@ public class MainActivity extends AppCompatActivity {
             // TODO Auto-generated method stub
         }
     }
-    */
+
+*/
+
+
+
+
+
+
+
+
+
 
 }

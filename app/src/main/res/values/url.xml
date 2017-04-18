@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="post_photo_url" type="string">http://34.253.87.41/upload</item>
+</resources>
