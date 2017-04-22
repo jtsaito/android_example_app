@@ -15,6 +15,7 @@ import android.widget.EditText;
 
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -129,7 +130,19 @@ public class MainActivity extends AppCompatActivity {
                         getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString() +
                         "/" + fileName;
 
-                Log.v("JTS", "file name onActivityReceived: " + fileName);
+                File f = new File("/storage/emulated/0/Android/data/com.example.jsaito.myapplication/files/Pictures/small.jpg");
+                File g = new File("/storage/emulated/0/Android/data/com.example.jsaito.myapplication/files/Pictures/small_copy.jpg");
+
+                try {
+                    byte[] fileBytes = getFileBytes(f);
+                    BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(g));
+                    bos.write(fileBytes);
+                    bos.flush();
+                    Log.v("JTS", "file name onActivityReceived: " + fileName);
+                    bos.close();
+                } catch( Exception e) {
+                    Log.v("JTS", "file cannot be written: " + e);
+                }
 
                 uploadFile(uploadFileName);
             }
@@ -266,10 +279,6 @@ public class MainActivity extends AppCompatActivity {
                 // file name could found file base or direct access from real path
                 // for now just get bitmap data from ImageView
 
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                DataOutputStream dos = new DataOutputStream(bos);
-                byte[] multipartBody = new byte[0];
-
                 try {
                     Log.v("JTS", "getByteData() starting to collecting upload bytes");
                     Log.v("JTS", "getByteData() file name: " + this.mUploadFileName);
@@ -278,16 +287,9 @@ public class MainActivity extends AppCompatActivity {
                     File file = new File("/storage/emulated/0/Android/data/com.example.jsaito.myapplication/files/Pictures/small.jpg");
                     byte[] bytes = getFileBytes(file);
 
-                    // the first file
-                    buildPart(dos, bytes, "foo.png");  // TODO: use real name
-                    // send multipart form data necesssary after file data
-                    dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
-                    // pass to multipart body
-                    multipartBody = bos.toByteArray();
-
                     Log.v("JTS", "finished collecting upload bytes");
 
-                    params.put("upload", new DataPart("file_avatar.jpg", multipartBody, "image/jpeg"));
+                    params.put("upload", new DataPart("file_avatar.jpg", bytes, "image/jpeg"));
 
                     //Log.v("JTS", params.toString());
                 } catch (IOException e) {
@@ -300,92 +302,15 @@ public class MainActivity extends AppCompatActivity {
         };
 
 
-        RequestQueue queue = Volley.newRequestQueue(this);
-        queue.add(multipartRequest);
+        //RequestQueue queue = Volley.newRequestQueue(this);
+        //queue.add(multipartRequest);
 
         // TODO why does this give compiler warnings
-        // VolleySingleton.getInstance(getBaseContext()).addToRequestQueue(multipartRequest);
-
-
-        // TODO remove this shite
-        /* Volley implementation
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        DataOutputStream dos = new DataOutputStream(bos);
-
-        byte[] multipartBody = new byte[0];
-        try {
-            byte[] bytes = getFileBytes(uploadFile);
-
-            // the first file
-            buildPart(dos, bytes, "foo.png");  // TODO: use real name
-            // send multipart form data necesssary after file data
-            dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
-            // pass to multipart body
-            multipartBody = bos.toByteArray();
-        } catch (IOException e) {
-            Log.v("JTS", "error: cannt file issues");
-            e.printStackTrace();
-        }
-
-        Map<String, String> params = ;
-        MultipartRequest multipartRequest = new MultipartRequest(url, null, params, mimeType, multipartBody, new Response.Listener<NetworkResponse>() {
-            @Override
-            public void onResponse(NetworkResponse response) {
-                //Toast.makeText(context, "Upload successfully!", Toast.LENGTH_SHORT).show();
-                Log.v("JTS", "received JSON response");
-                Log.v("JTS", response.toString());
-            }
-        }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                error.printStackTrace();
-                StackTraceElement[] stackTraceElements = error.getStackTrace();
-                for(int i=0; i<stackTraceElements.length; i++) {
-                    StackTraceElement element = stackTraceElements[i];
-                    Log.v("JTS", "error and shit: " + element.toString());
-                }
-
-                //Toast.makeText(context, "Upload failed!\r\n" + error.toString(), Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // Access the RequestQueue through your singleton class.
-
-
+        VolleySingleton.getInstance(getBaseContext()).addToRequestQueue(multipartRequest);
 
         // testing
         RequestQueue queue = Volley.newRequestQueue(this);
         queue.add(multipartRequest);
-        */
-    }
-
-
-
-    // TODO obsolete
-    private void buildPart(DataOutputStream dataOutputStream, byte[] fileData, String fileName) throws IOException {
-        dataOutputStream.writeBytes(twoHyphens + boundary + lineEnd);
-        dataOutputStream.writeBytes("Content-Disposition: form-data; name=\"uploaded_file\"; filename=\""
-                + fileName + "\"" + lineEnd);
-        dataOutputStream.writeBytes(lineEnd);
-
-        ByteArrayInputStream fileInputStream = new ByteArrayInputStream(fileData);
-        int bytesAvailable = fileInputStream.available();
-
-        int maxBufferSize = 1024 * 1024;
-        int bufferSize = Math.min(bytesAvailable, maxBufferSize);
-        byte[] buffer = new byte[bufferSize];
-
-        // read file and write it into form...
-        int bytesRead = fileInputStream.read(buffer, 0, bufferSize);
-
-        while (bytesRead > 0) {
-            dataOutputStream.write(buffer, 0, bufferSize);
-            bytesAvailable = fileInputStream.available();
-            bufferSize = Math.min(bytesAvailable, maxBufferSize);
-            bytesRead = fileInputStream.read(buffer, 0, bufferSize);
-        }
-
-        dataOutputStream.writeBytes(lineEnd);
     }
 
 
