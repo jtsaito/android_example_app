@@ -29,19 +29,24 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Queue;
 
 import android.util.Log;
 
 import com.android.volley.NetworkResponse;
+import com.android.volley.NoConnectionError;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
+import com.android.volley.TimeoutError;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import com.example.jsaito.*;
@@ -64,13 +69,15 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // TODO: remove
         // Instantiate the RequestQueue.
-        TheQueue = Volley.newRequestQueue(this);
+        //TheQueue = Volley.newRequestQueue(this);
     }
 
     /** Called when the user taps the Send button */
     public void sendMessage(View view) {
      /*
+        TODO: remove this junk
         Intent intent = new Intent(this, DisplayMessageActivity.class);
         EditText editText = (EditText) findViewById(R.id.editText);
         String message = editText.getText().toString();
@@ -121,8 +128,10 @@ public class MainActivity extends AppCompatActivity {
                 String uploadFileName =
                         getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString() +
                         "/" + fileName;
-                File f = new File(uploadFileName);
-                uploadFile(f);
+
+                Log.v("JTS", "file name onActivityReceived: " + fileName);
+
+                uploadFile(uploadFileName);
             }
         }
     }
@@ -149,8 +158,6 @@ public class MainActivity extends AppCompatActivity {
         return image;
     }
 
-
-
     public String getFileName(Uri uri) {
         String result = null;
         if (uri.getScheme().equals("content")) {
@@ -173,9 +180,135 @@ public class MainActivity extends AppCompatActivity {
         return result;
     }
 
-    private void uploadFile(File uploadFile) {
-        String url = "http://192.168.1.100/api/postfile";
 
+
+
+    private void uploadFile(String uploadFileName) {
+        String url = "http://172.16.1.32:8000/upload"; //  getResources().getString(R.string.post_photo_url); TODO prod url
+
+        Log.v("JTS", "uploadFile()" + url);
+        Log.v("JTS", "Upload url: " + url);
+        Log.v("JTS", "file name: " + uploadFileName);
+
+
+        MultipartRequest multipartRequest = new MultipartRequest(Request.Method.POST, url, uploadFileName, new Response.Listener<NetworkResponse>() {
+            @Override
+            public void onResponse(NetworkResponse response) {
+                String resultResponse = new String(response.data);
+                try {
+                    JSONObject result = new JSONObject(resultResponse);
+                    String status = result.getString("status");
+                    String message = result.getString("message");
+
+                    Log.v("JTS", "status: "+ status);
+
+                    /*
+                    if (status == "200 OK") {
+                        // tell everybody you have succed upload image and post strings
+                        Log.i("Messsage", message);
+                    } else {
+                        Log.i("Unexpected", message);
+                    }
+                    */
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                NetworkResponse networkResponse = error.networkResponse;
+                String errorMessage = "Unknown error";
+                if (networkResponse == null) {
+                    if (error.getClass().equals(TimeoutError.class)) {
+                        errorMessage = "Request timeout";
+                    } else if (error.getClass().equals(NoConnectionError.class)) {
+                        errorMessage = "Failed to connect server";
+                    }
+                } else {
+                    String result = new String(networkResponse.data);
+                    try {
+                        JSONObject response = new JSONObject(result);
+                        String status = response.getString("status");
+                        String message = response.getString("message");
+
+                        Log.e("Error Status", status);
+                        Log.e("Error Message", message);
+
+                        if (networkResponse.statusCode == 404) {
+                            errorMessage = "Resource not found";
+                        } else if (networkResponse.statusCode == 401) {
+                            errorMessage = message+" Please login again";
+                        } else if (networkResponse.statusCode == 400) {
+                            errorMessage = message+ " Check your inputs";
+                        } else if (networkResponse.statusCode == 500) {
+                            errorMessage = message+" Something is getting wrong";
+                        }
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+                Log.i("Error", errorMessage);
+                error.printStackTrace();
+            }
+        }) {
+
+            @Override
+            protected Map<String, String> getParams() {
+                Map<String, String> params = new HashMap<>();
+                params.put("id", "test");
+                return params;
+            }
+
+            @Override
+            protected Map<String, DataPart> getByteData() {
+                Map<String, DataPart> params = new HashMap<>();
+                // file name could found file base or direct access from real path
+                // for now just get bitmap data from ImageView
+
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                DataOutputStream dos = new DataOutputStream(bos);
+                byte[] multipartBody = new byte[0];
+
+                try {
+                    Log.v("JTS", "getByteData() starting to collecting upload bytes");
+                    Log.v("JTS", "getByteData() file name: " + this.mUploadFileName);
+
+                    //File file = new File(this.mUploadFileName);
+                    File file = new File("/storage/emulated/0/Android/data/com.example.jsaito.myapplication/files/Pictures/small.jpg");
+                    byte[] bytes = getFileBytes(file);
+
+                    // the first file
+                    buildPart(dos, bytes, "foo.png");  // TODO: use real name
+                    // send multipart form data necesssary after file data
+                    dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
+                    // pass to multipart body
+                    multipartBody = bos.toByteArray();
+
+                    Log.v("JTS", "finished collecting upload bytes");
+
+                    params.put("upload", new DataPart("file_avatar.jpg", multipartBody, "image/jpeg"));
+
+                    //Log.v("JTS", params.toString());
+                } catch (IOException e) {
+                    Log.v("JTS", "error: issues");
+                    e.printStackTrace();
+                }
+
+                return params;
+            }
+        };
+
+
+        RequestQueue queue = Volley.newRequestQueue(this);
+        queue.add(multipartRequest);
+
+        // TODO why does this give compiler warnings
+        // VolleySingleton.getInstance(getBaseContext()).addToRequestQueue(multipartRequest);
+
+
+        // TODO remove this shite
+        /* Volley implementation
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(bos);
 
@@ -190,10 +323,12 @@ public class MainActivity extends AppCompatActivity {
             // pass to multipart body
             multipartBody = bos.toByteArray();
         } catch (IOException e) {
+            Log.v("JTS", "error: cannt file issues");
             e.printStackTrace();
         }
 
-        MultipartRequest multipartRequest = new MultipartRequest(url, null, mimeType, multipartBody, new Response.Listener<NetworkResponse>() {
+        Map<String, String> params = ;
+        MultipartRequest multipartRequest = new MultipartRequest(url, null, params, mimeType, multipartBody, new Response.Listener<NetworkResponse>() {
             @Override
             public void onResponse(NetworkResponse response) {
                 //Toast.makeText(context, "Upload successfully!", Toast.LENGTH_SHORT).show();
@@ -203,15 +338,30 @@ public class MainActivity extends AppCompatActivity {
         }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
-                Log.v("JTS", "error and shit");
+                error.printStackTrace();
+                StackTraceElement[] stackTraceElements = error.getStackTrace();
+                for(int i=0; i<stackTraceElements.length; i++) {
+                    StackTraceElement element = stackTraceElements[i];
+                    Log.v("JTS", "error and shit: " + element.toString());
+                }
+
                 //Toast.makeText(context, "Upload failed!\r\n" + error.toString(), Toast.LENGTH_SHORT).show();
             }
         });
 
         // Access the RequestQueue through your singleton class.
-        TheQueue.add(multipartRequest);
+
+
+
+        // testing
+        RequestQueue queue = Volley.newRequestQueue(this);
+        queue.add(multipartRequest);
+        */
     }
 
+
+
+    // TODO obsolete
     private void buildPart(DataOutputStream dataOutputStream, byte[] fileData, String fileName) throws IOException {
         dataOutputStream.writeBytes(twoHyphens + boundary + lineEnd);
         dataOutputStream.writeBytes("Content-Disposition: form-data; name=\"uploaded_file\"; filename=\""
@@ -247,6 +397,11 @@ public class MainActivity extends AppCompatActivity {
         return buf;
     }
 
+
+
+
+
+
 /*
 
 
@@ -269,133 +424,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
-    public class HttpFileUpload implements Runnable{
-        URL connectURL;
-        String responseString;
-        String Title;
-        String Description;
-        byte[ ] dataToServer;
-        FileInputStream fileInputStream = null;
-
-        HttpFileUpload(String urlString, String vTitle, String vDesc){
-            try{
-                connectURL = new URL(urlString);
-                Title= vTitle;
-                Description = vDesc;
-            }catch(Exception ex){
-                Log.i("HttpFileUpload","URL Malformatted");
-            }
-        }
-
-        void Send_Now(FileInputStream fStream){
-            fileInputStream = fStream;
-            Sending();
-        }
-
-        void Sending(){
-            String iFileName = "ovicam_temp_vid.mp4";
-            String lineEnd = "\r\n";
-            String twoHyphens = "--";
-            String boundary = "*****";
-            String Tag="fSnd";
-            try
-            {
-                Log.e(Tag,"Starting Http File Sending to URL");
-
-                // Open a HTTP connection to the URL
-                HttpURLConnection conn = (HttpURLConnection)connectURL.openConnection();
-
-                // Allow Inputs
-                conn.setDoInput(true);
-
-                // Allow Outputs
-                conn.setDoOutput(true);
-
-                // Don't use a cached copy.
-                conn.setUseCaches(false);
-
-                // Use a post method.
-                conn.setRequestMethod("POST");
-
-                conn.setRequestProperty("Connection", "Keep-Alive");
-
-                conn.setRequestProperty("Content-Type", "multipart/form-data;boundary="+boundary);
-
-                DataOutputStream dos = new DataOutputStream(conn.getOutputStream());
-
-                dos.writeBytes(twoHyphens + boundary + lineEnd);
-                dos.writeBytes("Content-Disposition: form-data; name=\"title\""+ lineEnd);
-                dos.writeBytes(lineEnd);
-                dos.writeBytes(Title);
-                dos.writeBytes(lineEnd);
-                dos.writeBytes(twoHyphens + boundary + lineEnd);
-
-                dos.writeBytes("Content-Disposition: form-data; name=\"description\""+ lineEnd);
-                dos.writeBytes(lineEnd);
-                dos.writeBytes(Description);
-                dos.writeBytes(lineEnd);
-                dos.writeBytes(twoHyphens + boundary + lineEnd);
-
-                dos.writeBytes("Content-Disposition: form-data; name=\"uploadedfile\";filename=\"" + iFileName +"\"" + lineEnd);
-                dos.writeBytes(lineEnd);
-
-                Log.e(Tag,"Headers are written");
-
-                // create a buffer of maximum size
-                int bytesAvailable = fileInputStream.available();
-
-                int maxBufferSize = 1024;
-                int bufferSize = Math.min(bytesAvailable, maxBufferSize);
-                byte[ ] buffer = new byte[bufferSize];
-
-                // read file and write it into form...
-                int bytesRead = fileInputStream.read(buffer, 0, bufferSize);
-
-                while (bytesRead > 0)
-                {
-                    dos.write(buffer, 0, bufferSize);
-                    bytesAvailable = fileInputStream.available();
-                    bufferSize = Math.min(bytesAvailable,maxBufferSize);
-                    bytesRead = fileInputStream.read(buffer, 0,bufferSize);
-                }
-                dos.writeBytes(lineEnd);
-                dos.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd);
-
-                // close streams
-                fileInputStream.close();
-
-                dos.flush();
-
-                Log.e(Tag,"File Sent, Response: "+String.valueOf(conn.getResponseCode()));
-
-                InputStream is = conn.getInputStream();
-
-                // retrieve the response from server
-                int ch;
-
-                StringBuffer b =new StringBuffer();
-                while( ( ch = is.read() ) != -1 ){ b.append( (char)ch ); }
-                String s=b.toString();
-                Log.i("Response",s);
-                dos.close();
-            }
-            catch (MalformedURLException ex)
-            {
-                Log.e(Tag, "URL error: " + ex.getMessage(), ex);
-            }
-
-            catch (IOException ioe)
-            {
-                Log.e(Tag, "IO error: " + ioe.getMessage(), ioe);
-            }
-        }
-
-        @Override
-        public void run() {
-            // TODO Auto-generated method stub
-        }
-    }
 
 */
 
