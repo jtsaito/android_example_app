@@ -1,5 +1,6 @@
 package com.example.jsaito.myapplication;
 
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -26,7 +27,6 @@ import android.util.Log;
 import com.android.volley.NetworkResponse;
 import com.android.volley.NoConnectionError;
 import com.android.volley.Request;
-import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.TimeoutError;
 import com.android.volley.VolleyError;
@@ -92,11 +92,16 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == REQUEST_TAKE_PHOTO) {
             if (resultCode == RESULT_OK) {
                 String fileName = getFileName(currentPhotoURI);
-                String uploadFileName =
-                        getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString() +
-                                "/" + fileName;
+                String uploadFilePath =
+                        getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString();
 
-                uploadFile(uploadFileName);
+                Log.v("JTS", "starting to scale: ");
+                String path = getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString();
+                ImageScaler imageScaler = new ImageScaler(uploadFilePath, fileName);
+                String scaledFilePath = imageScaler.scale();
+                Log.v("JTS", "imageScaler output: " + scaledFilePath);
+
+                uploadFile(scaledFilePath);
             }
         }
     }
@@ -105,7 +110,6 @@ public class MainActivity extends AppCompatActivity {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
         String imageFileName = "JPEG_" + timeStamp;
         File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-
         File image = null;
 
         try {
@@ -145,7 +149,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void uploadFile(String uploadFileName) {
         String url = getResources().getString(R.string.post_photo_url); //"http://192.168.101.89:8000/upload"; TODO prod url
-        //String url = "http://192.168.101.89:8000/upload";
+        // String url = "http://192.168.101.89:8000/upload";
 
         MultipartRequest multipartRequest = new MultipartRequest(Request.Method.POST, url,
                 uploadFileName, new Response.Listener<NetworkResponse>() {
@@ -154,6 +158,7 @@ public class MainActivity extends AppCompatActivity {
                 String resultResponse = new String(response.data);
                 try {
                     Log.v("JTS", "onResponse(): status code" + response.statusCode);
+                    Log.v("JTS", "onResponse(): response.data" + resultResponse);
 
                     if (response.statusCode == 200) {
                         JSONObject result = new JSONObject(resultResponse);
@@ -208,8 +213,8 @@ public class MainActivity extends AppCompatActivity {
                 Map<String, DataPart> params = new HashMap<>();
 
                 try {
-                    //File file = new File(this.mUploadFileName);
-                    File file = new File("/storage/emulated/0/Android/data/com.example.jsaito.myapplication/files/Pictures/small.jpg");
+                    File file = new File(this.mUploadFileName);
+                    //File file = new File("/storage/emulated/0/Android/data/com.example.jsaito.myapplication/files/Pictures/small.jpg");
                     byte[] bytes = getFileBytes(file);
 
                     Log.v("JTS", "finished collecting upload bytes for file: " + this.mUploadFileName);
