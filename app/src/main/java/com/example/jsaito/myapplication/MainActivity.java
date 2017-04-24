@@ -1,6 +1,5 @@
 package com.example.jsaito.myapplication;
 
-import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -95,8 +94,7 @@ public class MainActivity extends AppCompatActivity {
                 String uploadFilePath =
                         getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString();
 
-                Log.v("JTS", "starting to scale: ");
-                String path = getExternalFilesDir(Environment.DIRECTORY_PICTURES).toString();
+                Log.v("JTS", "start scaling: ");
                 ImageScaler imageScaler = new ImageScaler(uploadFilePath, fileName);
                 String scaledFilePath = imageScaler.scale();
                 Log.v("JTS", "imageScaler output: " + scaledFilePath);
@@ -127,6 +125,7 @@ public class MainActivity extends AppCompatActivity {
 
     public String getFileName(Uri uri) {
         String result = null;
+
         if (uri.getScheme().equals("content")) {
             Cursor cursor = getContentResolver().query(uri, null, null, null, null);
             try {
@@ -242,5 +241,4 @@ public class MainActivity extends AppCompatActivity {
         int numRead = in.read(buf);
         return buf;
     }
-
 }
